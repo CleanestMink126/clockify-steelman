@@ -8,6 +8,7 @@ from authkey import KEY, USER_ID, WORKSPACE_ID
 
 ENDPOINT = 'https://api.clockify.me/api/v1'
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
+weekdays = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su']
 
 
 class TimeEntry:
@@ -88,11 +89,10 @@ def get_dates(entries):
     return date_idx
 
 
-def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
+def get_range(entries_by_project, selected_groups, date_idx):
     num_x = len(date_idx)
     x = np.arange(num_x)
-    print(date_idx)
-    total_sum = np.zeros(num_x)
+    groups_times = []
     for i, projects in enumerate(selected_projects):
         group_sum = np.zeros(num_x)
         for project in projects:
@@ -100,10 +100,37 @@ def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
             for entry in entries:
                 duration = entry.duration.total_seconds()/3600.0
                 group_sum[date_idx[entry.start.date()]] += duration
+        groups_times.append(group_sum)
+    return x, groups_times
+
+
+def get_average_week(entries_by_project, selected_groups, date_idx):
+    num_x = len(date_idx)
+    rev_date_idx = {i: d for d, i in date_idx.items()}
+    x, groups_times = get_range(entries_by_project, selected_groups, date_idx)
+    total_sum = np.zeros(num_x)
+    avg_group_times = []
+    for i, group_sum in enumerate(groups_times):
+        days_tot = np.zeros(7)
+        days_num = np.zeros(7)
+        for j in range(group_sum.shape[0]):
+            curr_date = rev_date_idx[j]
+            days_tot[curr_date.weekday()] += group_sum[j]
+            days_num[curr_date.weekday()] += 1
+        avg_group_times.append(days_tot/days_num)
+    return weekdays, avg_group_times
+
+
+def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
+    num_x = len(date_idx)
+    x, groups_times = get_average_week(entries_by_project, selected_groups, date_idx)
+    total_sum = np.zeros(len(x))
+    for i, group_sum in enumerate(groups_times):
+        projects = selected_groups[i]
         color = proj_info[projects[0]]
         next_sum = total_sum + group_sum
-        plt.fill_between(x[:-1], total_sum[:-1], next_sum[:-1], color=color)
-        plt.plot(x[:-1], next_sum[:-1], label=', '.join(projects), color=color)
+        plt.fill_between(x, total_sum, next_sum, color=color)
+        plt.plot(x, next_sum, label=', '.join(projects), color=color)
         total_sum = next_sum
     print(np.mean(total_sum))
     plt.legend()
@@ -113,19 +140,19 @@ def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
 # print(req)
 if __name__ == '__main__':
     selected_projects = [
-        ['😴😴😴'],
-        ['SCOPE'],
-        ['🤝🤝🤝'],
+        # ['😴😴😴'],
+        # ['SCOPE'],
+        # ['🤝🤝🤝'],
         ['Misc Work', 'ENTREP', 'ML', 'BIO'],
-        ['Misc not work', '🔥🔥🔥', 'Guitar Hero'],
-        ['Misc life stuff',  '💪💪💪']
+        # ['Misc not work', '🔥🔥🔥', 'Guitar Hero'],
+        # ['Misc life stuff',  '💪💪💪']
     ]
     proj_name, proj_info = getProjects()
     # print(proj_name.values())
-    last_week = datetime.now() - timedelta(days=21)
-    last_week = last_week.replace(microsecond=0)
-    last_week_str = last_week.isoformat() + "Z"
-    entries, entries_by_project = getTimes(proj_name, last_week_str)
+    start_date = datetime.now() - timedelta(days=100)
+    start_date = start_date.replace(microsecond=0)
+    start_date_str = start_date.isoformat() + "Z"
+    entries, entries_by_project = getTimes(proj_name, start_date_str)
     date_idx = get_dates(entries)
     plot_entries(entries_by_project, selected_projects, date_idx, proj_info)
     # print(entries_by_project)
