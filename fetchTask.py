@@ -1,12 +1,15 @@
 import requests
 import time
 from datetime import datetime, timedelta
+from dateutil import tz
 import matplotlib.pyplot as plt
 import numpy as np
 from authkey import KEY, USER_ID, WORKSPACE_ID
 
 
 ENDPOINT = 'https://api.clockify.me/api/v1'
+from_zone = tz.tzutc()
+to_zone = tz.tzlocal()
 colors = ['b', 'g', 'r', 'c', 'm', 'y']
 weekdays = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su']
 
@@ -29,16 +32,17 @@ def getProjects():
     req = req.json()
     proj_name = {}
     proj_info = {}
-    print(req)
     for entry in req:
         proj_name[entry['id']] = entry['name']
         proj_info[entry['name']] = entry['color']
     return proj_name, proj_info
 
 
-def getTimes(proj_name, start_time):
+def getTimes(proj_name, start_time, end_time=None):
     path = f'/workspaces/{WORKSPACE_ID}/user/{USER_ID}/time-entries'
     arguements = f'?start={start_time}&page-size=1000'
+    if end_time is not None:
+        arguements += f'&end={end_time}'
     # path = '/workspaces'
     url = ENDPOINT + path + arguements
     req = requests.get(url, headers={'content-type': 'application/json', 'X-Api-Key': KEY})
@@ -50,11 +54,11 @@ def getTimes(proj_name, start_time):
         if (project not in entries_by_project):
             entries_by_project[project] = []
         start = entry['timeInterval']['start']
-        start = datetime.fromisoformat(start[:-1])
+        start = datetime.fromisoformat(start[:-1]).replace(tzinfo=from_zone).astimezone(to_zone)
         end = entry['timeInterval']['end']
         if (end is None):
             continue
-        end = datetime.fromisoformat(end[:-1])
+        end = datetime.fromisoformat(end[:-1]).replace(tzinfo=from_zone).astimezone(to_zone)
         # Check checkMidnight
         if start.date() != end.date():
             new_end = start.replace(hour=23, minute=59, second=59)
@@ -64,12 +68,31 @@ def getTimes(proj_name, start_time):
             prev_entries = entries_by_project[project]
             prev_entries.append(first_entry)
             start = new_start
+        if start.date() == datetime.today().date():
+            continue
         entry = TimeEntry(start, end, project)
         entries.append(entry)
         prev_entries = entries_by_project[project]
         prev_entries.append(entry)
 
     return entries, entries_by_project
+
+
+def get_expected_activity(curr_datetime):
+    proj_name, proj_info = getProjects()
+    start_str = (curr_datetime - timedelta(days=1000)).isoformat() + "Z"
+    entries, entries_by_project = getTimes(proj_name, start_str)
+    project_idx = {v: i for i, v in enumerate(proj_name.values())}
+    counts = np.zeros(len(proj_name))
+    for entry in entries:
+        if(entry.start.weekday() != curr_datetime.weekday()):
+            continue
+        if(entry.start.time() <= curr_datetime.time() <= entry.end.time()):
+            counts[project_idx[entry.project_name]] += 1
+    counts = counts / np.sum(counts)
+    for k, v in proj_name.items():
+        if(counts[project_idx[v]]):
+            print(f'{v}: {counts[project_idx[v]]}')
 
 
 def get_dates(entries):
@@ -91,7 +114,7 @@ def get_dates(entries):
 
 def get_range(entries_by_project, selected_groups, date_idx):
     num_x = len(date_idx)
-    x = np.arange(num_x)
+    x = list(date_idx.keys())
     groups_times = []
     for i, projects in enumerate(selected_projects):
         group_sum = np.zeros(num_x)
@@ -121,9 +144,7 @@ def get_average_week(entries_by_project, selected_groups, date_idx):
     return weekdays, avg_group_times
 
 
-def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
-    num_x = len(date_idx)
-    x, groups_times = get_average_week(entries_by_project, selected_groups, date_idx)
+def plot_entries(x, groups_times, selected_groups, proj_info):
     total_sum = np.zeros(len(x))
     for i, group_sum in enumerate(groups_times):
         projects = selected_groups[i]
@@ -137,22 +158,31 @@ def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
     plt.show()
 
 
-# print(req)
-if __name__ == '__main__':
-    selected_projects = [
-        # ['😴😴😴'],
-        # ['SCOPE'],
-        # ['🤝🤝🤝'],
-        ['Misc Work', 'ENTREP', 'ML', 'BIO'],
-        # ['Misc not work', '🔥🔥🔥', 'Guitar Hero'],
-        # ['Misc life stuff',  '💪💪💪']
-    ]
+def plot(selected_projects, average_week=False, start_date=None):
     proj_name, proj_info = getProjects()
-    # print(proj_name.values())
-    start_date = datetime.now() - timedelta(days=100)
-    start_date = start_date.replace(microsecond=0)
+    if start_date is None:
+        start_date = datetime.now() - timedelta(days=100)
+        start_date = start_date.replace(microsecond=0)
     start_date_str = start_date.isoformat() + "Z"
     entries, entries_by_project = getTimes(proj_name, start_date_str)
     date_idx = get_dates(entries)
-    plot_entries(entries_by_project, selected_projects, date_idx, proj_info)
-    # print(entries_by_project)
+    if (average_week):
+        x, groups_times = get_average_week(entries_by_project, selected_projects, date_idx)
+    else:
+        x, groups_times = get_range(entries_by_project, selected_projects, date_idx)
+    plot_entries(x, groups_times, selected_projects, proj_info)
+
+
+if __name__ == '__main__':
+
+    selected_projects = [
+        # ['😴😴😴'],
+        ['SCOPE'],
+        # ['🤝🤝🤝'],
+        ['Misc Work', 'ENTREP', 'ML', 'BIO'],
+        # ['Misc not work', '🔥🔥🔥', 'Guitar Hero'],
+        ['Misc life stuff',  '💪💪💪']
+    ]
+    get_expected_activity(datetime.now())
+    plot(selected_projects, average_week=False)
+    plot(selected_projects, average_week=True)
