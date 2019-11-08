@@ -27,9 +27,12 @@ def getProjects():
     req = requests.get(url, headers={'content-type': 'application/json', 'X-Api-Key': KEY})
     req = req.json()
     proj_name = {}
+    proj_info = {}
+    print(req)
     for entry in req:
         proj_name[entry['id']] = entry['name']
-    return proj_name
+        proj_info[entry['name']] = entry['color']
+    return proj_name, proj_info
 
 
 def getTimes(proj_name, start_time):
@@ -79,13 +82,13 @@ def get_dates(entries):
             range_d[1] = d
     # Build dict
     dates = [range_d[0]]
-    while dates[-1] <= range_d[1]:
+    while dates[-1] < range_d[1]:
         dates.append(dates[-1] + one_day)
     date_idx = {d: i for i, d in enumerate(dates)}
     return date_idx
 
 
-def plot_entries(entries_by_project, selected_groups, date_idx):
+def plot_entries(entries_by_project, selected_groups, date_idx, proj_info):
     num_x = len(date_idx)
     x = np.arange(num_x)
     print(date_idx)
@@ -97,11 +100,12 @@ def plot_entries(entries_by_project, selected_groups, date_idx):
             for entry in entries:
                 duration = entry.duration.total_seconds()/3600.0
                 group_sum[date_idx[entry.start.date()]] += duration
-        color = colors[i]
+        color = proj_info[projects[0]]
         next_sum = total_sum + group_sum
-        plt.fill_between(x, total_sum, next_sum, color=color)
-        plt.plot(x, next_sum, label=', '.join(projects), color=color)
+        plt.fill_between(x[:-1], total_sum[:-1], next_sum[:-1], color=color)
+        plt.plot(x[:-1], next_sum[:-1], label=', '.join(projects), color=color)
         total_sum = next_sum
+    print(np.mean(total_sum))
     plt.legend()
     plt.show()
 
@@ -109,17 +113,19 @@ def plot_entries(entries_by_project, selected_groups, date_idx):
 # print(req)
 if __name__ == '__main__':
     selected_projects = [
-                        ['😴😴😴'],
-                        ['SCOPE', 'Misc Work', 'ENTREP', 'ML', 'BIO'],
-                        ['Misc not work', '🔥🔥🔥', 'Guitar Hero', '🤝🤝🤝'],
-                        ['Misc life stuff',  '💪💪💪']
+        ['😴😴😴'],
+        ['SCOPE'],
+        ['🤝🤝🤝'],
+        ['Misc Work', 'ENTREP', 'ML', 'BIO'],
+        ['Misc not work', '🔥🔥🔥', 'Guitar Hero'],
+        ['Misc life stuff',  '💪💪💪']
     ]
-    proj_name = getProjects()
-    print(proj_name.values())
+    proj_name, proj_info = getProjects()
+    # print(proj_name.values())
     last_week = datetime.now() - timedelta(days=21)
     last_week = last_week.replace(microsecond=0)
     last_week_str = last_week.isoformat() + "Z"
     entries, entries_by_project = getTimes(proj_name, last_week_str)
     date_idx = get_dates(entries)
-    plot_entries(entries_by_project, selected_projects, date_idx)
+    plot_entries(entries_by_project, selected_projects, date_idx, proj_info)
     # print(entries_by_project)
