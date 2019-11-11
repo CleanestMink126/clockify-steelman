@@ -158,7 +158,53 @@ def plot_entries(x, groups_times, selected_groups, proj_info):
     plt.show()
 
 
-def plot(selected_projects, average_week=False, start_date=None):
+def bar_plot(labels, data, selected_projects, proj_info):
+    fig, ax = plt.subplots()
+    num_groups = len(selected_projects)
+    width = 1 / (num_groups + 1)  # the width of the bars
+    locs = np.arange(len(labels))
+    ax.set_xticks(locs - 0.5)
+    ax.set_xticklabels(labels)
+    for i, projects in enumerate(selected_projects):
+        color = proj_info[projects[0]]
+        ax.bar(locs - (1-width)*(i/num_groups), data[i], width, label=', '.join(projects), color=color)
+    ax.legend()
+    plt.show()
+
+
+def compareWeek(selected_projects, start_date=None, week_end_date=None):
+    proj_name, proj_info = getProjects()
+    if start_date is None:
+        start_date = datetime.now() - timedelta(days=100)
+        start_date = start_date.replace(microsecond=0)
+    start_date_str = start_date.isoformat() + "Z"
+    entries, entries_by_project = getTimes(proj_name, start_date_str)
+    date_idx = get_dates(entries)
+    week_x, week_groups_times = get_average_week(entries_by_project, selected_projects, date_idx)
+    all_x, all_groups_times = get_range(entries_by_project, selected_projects, date_idx)
+    if week_end_date is None:
+        week_end_date = datetime.now() - timedelta(days=1)
+    start_date = week_end_date - timedelta(days=6)
+    offset = start_date.weekday()
+    start_idx = date_idx[start_date.date()]
+    delta_group_times = []
+    percent_group_times = []
+    for curr_proj, avg_proj in zip(all_groups_times, week_groups_times):
+        curr_week = curr_proj[start_idx:start_idx+7]
+        avg_proj = np.roll(avg_proj, -offset)
+        delta_group_times.append(curr_week - avg_proj)
+        centered = (curr_week/(avg_proj + 0.00001) * 100) - 100
+        centered[centered > 500] = 500.0
+        percent_group_times.append(centered)
+    x = all_x[start_idx:start_idx+7]
+    delta_group_times = np.array(delta_group_times)
+    percent_group_times = np.array(percent_group_times)
+    x_labels = np.roll(np.array(week_x), -offset)
+    bar_plot(x_labels, delta_group_times, selected_projects, proj_info)
+    bar_plot(x_labels, percent_group_times, selected_projects, proj_info)
+
+
+def plot(selected_projects, type=None, start_date=None):
     proj_name, proj_info = getProjects()
     if start_date is None:
         start_date = datetime.now() - timedelta(days=100)
@@ -176,13 +222,15 @@ def plot(selected_projects, average_week=False, start_date=None):
 if __name__ == '__main__':
 
     selected_projects = [
-        # ['😴😴😴'],
-        ['SCOPE'],
+        ['😴😴😴'],
+        # ['SCOPE'],
         # ['🤝🤝🤝'],
-        ['Misc Work', 'ENTREP', 'ML', 'BIO'],
-        # ['Misc not work', '🔥🔥🔥', 'Guitar Hero'],
+        ['SCOPE', 'Misc Work', 'ENTREP', 'ML', 'BIO'],
+        ['🤝🤝🤝', 'Misc not work', '🔥🔥🔥', 'Guitar Hero'],
         ['Misc life stuff',  '💪💪💪']
     ]
+    start_date = datetime(2019, 10, 27)
     get_expected_activity(datetime.now())
-    plot(selected_projects, average_week=False)
-    plot(selected_projects, average_week=True)
+    compareWeek(selected_projects, start_date=start_date)  # , week_end_date=datetime.now() - timedelta(days=7))
+    # plot(selected_projects, average_week=False)
+    # plot(selected_projects, average_week=True)
